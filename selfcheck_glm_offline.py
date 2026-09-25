@@ -604,6 +604,28 @@ try:
     check("（复现前提）它确实不是有效的 glob 模式", _glob.glob(_pdf_bracket) == [])
 finally:
     os.remove(_pdf_bracket)
+
+# 回归：课件目录本身常叫 `[1]物质及其变化`。`...\[1]物质及其变化\pdf` 这种输入若把目录名
+# 拼进 glob 模式串，`[1]` 会被当字符类，PDF 明明躺在里面却报"目录内未找到 PDF"（实测踩过，已修）。
+_bracket_dir = os.path.join(_BATCH, "[1]物质及其变化", "pdf")
+os.makedirs(_bracket_dir, exist_ok=True)
+_pdf_in_bracket_dir = os.path.join(_bracket_dir, "课件4.pdf")
+shutil.copyfile(PDF, _pdf_in_bracket_dir)
+try:
+    check("目录名带 [] 的目录能正常展开出 PDF（不被 glob 当字符类吃掉）",
+          B.collect_inputs([_bracket_dir], quiet=True) == [_pdf_in_bracket_dir],
+          str(B.collect_inputs([_bracket_dir], quiet=True)))
+    check("目录名带 [] 时 -r 递归同样能展开",
+          B.collect_inputs([os.path.join(_BATCH, "[1]物质及其变化")], recursive=True,
+                           quiet=True) == [_pdf_in_bracket_dir])
+    check("glob 里带 [] 的目录前缀照样能展开（先剥掉真实存在的前缀再通配）",
+          B.collect_inputs([os.path.join(_bracket_dir, "*.pdf")], quiet=True)
+          == [_pdf_in_bracket_dir])
+    check("普通通配符写法没被改动：a/*.pdf 仍能展开",
+          B.collect_inputs([os.path.join(_BATCH, "a", "*.pdf")], quiet=True) == [_pdf_a])
+finally:
+    shutil.rmtree(os.path.join(_BATCH, "[1]物质及其变化"), ignore_errors=True)
+
 try:
     B.collect_inputs([os.path.join(_BATCH, "没有这个目录")], quiet=True)
     check("不存在的输入应报错", False)

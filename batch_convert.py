@@ -37,6 +37,10 @@
    并且**字面路径优先于通配符展开** —— `[2]碳酸钠+碳酸氢钠.pdf` 这种名字里的 `[2]`
    会被 glob 当成字符类（匹配一个字符 "2"），先展开就会"查无此文件"而把整份课件
    静默漏掉（本仓库的示例课件正好叫这个名字，实测踩过）。
+   **目录名里的 `[]` 同样中招**：`...\\[1]物质及其变化\\pdf` 这种路径，一旦拼上 `*.pdf`
+   再交给 glob，`[1]` 就被当成"匹配字符 1"，于是 PDF 明明躺在里面却报"目录里没有 PDF"。
+   所以目录一律用文件系统 API 直接列（见 `_iter_pdf_paths`），glob 也先把**磁盘上真实
+   存在**的字面前缀剥掉再展开（见 `_glob_safe`）—— 路径是不是通配符，文件系统说了算。
 7. **默认跳过 `*_handout_glm.pdf`**（本工具自己的产物）。产物 PDF 常常和源课件放在
    同一个目录 —— 本仓库就是 —— 扫描时把它们再转一遍只会得到
    `xxx_handout_glm_handout_glm.md`。要连产物一起转用 `--include-outputs`，
@@ -77,6 +81,72 @@ def _natural_key(text):
 
 def _is_glob(pattern):
     return any(ch in pattern for ch in "*?[")
+
+
+def _iter_pdf_paths(root, recursive=False):
+    """列目录下的所有 .pdf —— 用文件系统 API，**绝不把目录名交给 glob**。
+
+    为什么不能用 `glob.glob(os.path.join(root, "*.pdf"))`：glob 会把整条模式串都过一遍
+    通配符语义，所以目录名里的方括号也被当成字符类。`...\\[1]物质及其变化\\pdf\\*.pdf`
+    里的 `[1]` 会去匹配"一个字符 1"，而磁盘上那条目录叫 `[1]物质及其变化`，于是 glob
+    一个结果都不返回 —— 用户看到的就是"目录内未找到 PDF"，哪怕 12 个 PDF 就躺在里面。
+    （同理还有 `[1]物质的组成和性质分类.pdf` 这类**文件名**，由字面路径优先那一步兜住。）
+
+    顺序与旧的 glob 展开一致：非递归列本层，递归用 os.walk 先排序再下降，
+    两边都按自然序，保证 `讲义2` 在 `讲义10` 前。
+    """
+    if recursive:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames.sort(key=_natural_key)
+            for name in sorted(filenames, key=_natural_key):
+                if name.lower().endswith(".pdf"):
+                    yield os.path.join(dirpath, name)
+        return
+    try:
+        with os.scandir(root) as it:
+            entries = sorted(it, key=lambda e: _natural_key(e.name))
+    except OSError:
+        return
+    for entry in entries:
+        if not entry.name.lower().endswith(".pdf"):
+            continue
+        try:
+            if entry.is_file():
+                yield entry.path
+        except OSError:
+            continue
+
+
+def _glob_safe(pattern, recursive=False):
+    """`glob.glob`，但先剥掉**磁盘上真实存在**的字面前缀，只对剩下的部分做通配符展开。
+
+    `C:\\课件\\[1]物质及其变化\\*.pdf` 里的 `[1]` 会被 glob 当字符类，整条模式都匹配不上。
+    剥掉真实存在的前缀后，交给 glob 的只剩 `*.pdf`，目录名里的方括号就再也伤不到你。
+
+    从前往后逐段判断：`isdir` 为真就当字面量收进前缀，第一个不存在的组件起停手，
+    剩下的整段原样交给 glob（保留 `*` / `?` / `[]` / `**` 的通配符语义）。
+    所以 `image/*.pdf` 这种正常通配符写法一个字节都不会变。
+    """
+    drive, rest = os.path.splitdrive(pattern)
+    prefix = drive + os.sep if drive else ""
+    parts = [p for p in re.split(r"[\\/]+", rest) if p]
+    idx = 0
+    for i, part in enumerate(parts):
+        candidate = os.path.join(prefix, part) if prefix else part
+        if os.path.isdir(candidate):
+            prefix, idx = candidate, i + 1
+        else:
+            break
+    tail = os.path.join(*parts[idx:]) if parts[idx:] else ""
+    if not tail:
+        return [prefix] if prefix and os.path.exists(prefix) else []
+    # 关键：前缀作为 root_dir 交给 glob，**不拼进模式串** —— 拼回去等于又把 `[1]` 交给
+    # 通配符语义，前功尽弃（第一版就是这么写错、被自检抓出来的）。
+    try:
+        hits = _glob.glob(tail, root_dir=prefix or None, recursive=recursive)
+    except TypeError:  # Python < 3.10：没有 root_dir，只能退回旧行为
+        return _glob.glob(os.path.join(prefix, tail), recursive=recursive)
+    return [os.path.join(prefix, h) if prefix else h for h in hits]
 
 
 def collect_inputs(inputs, recursive=False, list_file=None, quiet=False,
@@ -137,9 +207,9 @@ def collect_inputs(inputs, recursive=False, list_file=None, quiet=False,
         # （匹配一个字符 "2"），先当 glob 展开就会"查无此文件"而把这份课件静默漏掉
         # —— 本仓库的示例课件正好叫这个名字，实测踩过。
         if os.path.isdir(path):
-            pattern = "**/*.pdf" if recursive else "*.pdf"
-            hits = sorted(_glob.glob(os.path.join(path, pattern), recursive=recursive),
-                          key=_natural_key)
+            # 目录用 scandir/os.walk 直接列，不拼 glob 模式：目录名里的 `[]`（如
+            # `[1]物质及其变化`）一旦进了 glob 模式串就会被当字符类，整批静默漏光。
+            hits = sorted(_iter_pdf_paths(path, recursive=recursive), key=_natural_key)
             if not hits and not quiet:
                 print(f"  [警告] 目录里没有 PDF：{raw}")
             for hit in hits:
@@ -149,8 +219,16 @@ def collect_inputs(inputs, recursive=False, list_file=None, quiet=False,
                 print(f"  [警告] 不是 .pdf，仍按 PDF 尝试：{raw}")
             _consider(path, auto=False)
         elif _is_glob(raw):
-            hits = sorted(_glob.glob(path, recursive=recursive), key=_natural_key)
+            hits = sorted(_glob_safe(path, recursive=recursive), key=_natural_key)
             pdfs = [h for h in hits if h.lower().endswith(".pdf")]
+            # 只有方括号、没有 * / ? 的模式，"字符类"几乎不可能是本意 —— 更可能是路径
+            # 本身带 `[1]` 这类字面量、人又手滑打错了字（`...\pdf后`）。这时不要再甩
+            # "通配符没匹配到 PDF"，而是按"这条路径根本不存在"如实报错，省得去猜 glob。
+            if not pdfs and not any(ch in raw for ch in "*?"):
+                raise FileNotFoundError(
+                    f"输入既不是文件也不是目录：{raw}"
+                    f"（这条路径里只有方括号、没有 * 或 ?，所以没按通配符展开；请核对拼写。"
+                    f"路径里的 [1] 这类方括号是允许的，整条加引号即可）")
             if not pdfs and not quiet:
                 print(f"  [警告] 通配符没匹配到 PDF：{raw}")
             for hit in pdfs:

@@ -428,6 +428,10 @@ python batch_convert.py 课件目录 --verify-only      # 只体检已有产物�
 6. **输入展开替你把坑踩平**：自动去重（同一个 PDF 不会转两遍），**字面路径优先于通配符
    展开** —— `[2]碳酸钠+碳酸氢钠.pdf` 这种名字里的 `[2]` 会被 glob 当成字符类，
    先展开就会"查无此文件"而把整份课件静默漏掉（实测踩过，已修）。
+   **目录名里的 `[]` 同理**：`...\[1]物质及其变化\pdf` 这种输入，一旦把目录名拼上 `*.pdf`
+   交给 glob，`[1]` 就被当字符类，PDF 明明躺在里面却报"目录里没有 PDF"。现在目录一律用
+   文件系统 API 直接列（不经过 glob），glob 写法也先把磁盘上真实存在的字面前缀剥掉、
+   只对剩余部分通配 —— 路径是不是通配符，由文件系统裁决。
 7. **默认跳过 `*_handout_glm.pdf`**。产物 PDF 常常和源课件放在同一个目录（本仓库就是），
    扫描时把它们再转一遍只会得到 `xxx_handout_glm_handout_glm.md`。要一起转加
    `--include-outputs`，要手工排除加 `--exclude PATTERN`。
@@ -492,7 +496,7 @@ python selfcheck_glm_offline.py test1.pdf
 | 8h | KaTeX 兼容：`\xlongequal` → `\overset{...}{=}`、`\overset`/`\stackrel` 原样保留、旧写法 `(\Delta) =` → `\overset{\Delta}{=}`、数学片段内 Unicode 符号 → LaTeX 命令、命令后补空格、中文注释从下标里提出 |
 | 9 | `call_glm` 的重试 / 降级 / 夹紧（假传输层注入异常） |
 | 10–10d | 端到端落盘、异常路径、`--no-normalize`、`--pages`、CLI 参数 |
-| 13a–13h | **批量入口**：输入展开（目录/glob/清单/去重/自然序）、`[2]xxx.pdf` 不被 glob 的字符类吃掉、输出名冲突消歧、半成品不算成品、`.part` 改名、坏文件不拖垮整批、`--skip-existing` 不重复发请求、`--report` 计数、`--verify-only` 不发请求、`--dry-run` 不写文件、`--stop-on-error` 停批也写报表 |
+| 13a–13h | **批量入口**：输入展开（目录/glob/清单/去重/自然序）、`[2]xxx.pdf` 与 `[1]xxx\` 目录名都不被 glob 的字符类吃掉、输出名冲突消歧、半成品不算成品、`.part` 改名、坏文件不拖垮整批、`--skip-existing` 不重复发请求、`--report` 计数、`--verify-only` 不发请求、`--dry-run` 不写文件、`--stop-on-error` 停批也写报表 |
 
 ### 7.2 交付物体检（对真实产物）
 
@@ -605,6 +609,7 @@ python handout_normalize.py 输入.md [输出.md]
 | 批量中断了，不想从头再来 | 重跑时加 `--skip-existing`：已完整落盘的产物直接跳过，不重复发请求 |
 | 输出目录里出现 `xxx.md.part` | 那是中途失败（或 Ctrl+C）留下的半成品，不是成品：看一眼没问题就手动改名成 `.md`，否则直接删掉重跑 |
 | 某个课件没被批量转到 | ① 名字里带 `[]` 的（如 `[2]碳酸钠+碳酸氢钠.pdf`）已按字面路径处理，不会再被 glob 吃掉；② 名字以 `_handout_glm` 结尾的 PDF 被当成自家产物默认跳过了，要转就加 `--include-outputs`；③ 目录没加 `-r` 时不含子目录 |
+| 报「目录里没有 PDF」但里面明明有 | 目录名带 `[]`（如 `...\[1]物质及其变化\pdf`）曾被 glob 当字符类吃掉，已修；仍遇到就先用 `--dry-run` 看展开结果，并确认路径没打错（不存在的路径现在会直接说"既不是文件也不是目录"） |
 | 想先确认会转哪些、转到哪 | `python batch_convert.py 输入 --dry-run`：只列计划，不调 API、不写文件 |
 | 批量跑之前想先确认 Key 还能用 | `python batch_convert.py 输入 --precheck`：自检不过就整批不启动，不会白跑一轮 |
 
