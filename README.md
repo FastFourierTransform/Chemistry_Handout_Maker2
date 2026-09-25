@@ -55,7 +55,7 @@ conda activate Handout-Maker2          # Python 3.12，装着 pymupdf + Pillow
 # ① 先确认 Key / 网络 / 看图能力都通（发一张现场画的小图，几秒出结果）
 python pdf_to_chemistry_handout_glm.py --check
 
-# ② 转整份 PDF（输出默认 <输入名>_handout_glm.md）
+# ② 转整份 PDF（输出默认 <输入名>.md）
 python pdf_to_chemistry_handout_glm.py test1.pdf
 
 # ③ 只转前 3 页试参数
@@ -66,7 +66,7 @@ python batch_convert.py 课件目录 -r -o 讲义 --skip-existing --verify
 python batch_convert.py 课件目录 --dry-run       # 先看看会转哪些、输出到哪（不花额度）
 
 # ⑤ 交付前体检：表格渲染 / 化学式方言 / 符号，顺便出一份 HTML 预览
-python verify_handout.py test1_handout_glm.md --html preview.html
+python verify_handout.py test1.md --html preview.html
 
 # ⑥ 不联网的回归自检（假传输层，改代码后必跑）
 python selfcheck_glm_offline.py test1.pdf
@@ -352,7 +352,7 @@ python pdf_to_chemistry_handout_glm.py [输入.pdf] [输出.md] [选项]
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
 | `input_pdf` | `test1.pdf` | 输入 PDF |
-| `output_md` | `<输入名>_handout_glm.md` | 输出 Markdown |
+| `output_md` | `<输入名>.md` | 输出 Markdown |
 | `--model` | `glm-4.6v-flash,glm-4v-flash` | 模型名，逗号分隔即降级链 |
 | `--api-key` | 环境变量/内置 | API Key |
 | `--base-url` | `https://open.bigmodel.cn/api/paas/v4/` | 网关地址 |
@@ -432,8 +432,8 @@ python batch_convert.py 课件目录 --verify-only      # 只体检已有产物�
    交给 glob，`[1]` 就被当字符类，PDF 明明躺在里面却报"目录里没有 PDF"。现在目录一律用
    文件系统 API 直接列（不经过 glob），glob 写法也先把磁盘上真实存在的字面前缀剥掉、
    只对剩余部分通配 —— 路径是不是通配符，由文件系统裁决。
-7. **默认跳过 `*_handout_glm.pdf`**。产物 PDF 常常和源课件放在同一个目录（本仓库就是），
-   扫描时把它们再转一遍只会得到 `xxx_handout_glm_handout_glm.md`。要一起转加
+7. **默认跳过 `*_handout_glm.pdf`**。这类产物 PDF 常常和源课件放在同一个目录（本仓库就是），
+   扫描时把它们再转一遍只会得到 `xxx_handout_glm.md` 这种冗余产物。要一起转加
    `--include-outputs`，要手工排除加 `--exclude PATTERN`。
 
 `--report` 的 JSON 形状：`counts`（total/ok/skip/fail）、`total_pages`、`options`
@@ -445,7 +445,7 @@ pdf_pages / verify / error`）。
 ## 6. 输出格式说明
 
 ```markdown
-# test1 课程讲义                      ← 一级标题，取 PDF 文件名
+# test1                               ← 一级标题，取 PDF 文件名（不带后缀）
 
 ## 钠的化合物                        ← 课件里的标题按层级还原，正文连续
 
@@ -462,7 +462,8 @@ $2\text{Na} + 2\text{H}_2\text{O} = 2\text{NaOH} + \text{H}_2\uparrow$
 
 要点：
 
-- 一级标题只有一个，正文连续，**没有「## 第 N 页内容」**；
+- 一级标题只有一个（就是 PDF 文件名，不带「课程讲义」这类后缀），正文连续，
+  **没有「## 第 N 页内容」**；
 - 表格是独立成段的 HTML 块（前后有空行，内部无空行），能直接交给任何 Markdown 渲染器；
 - 化学记号表格内外都是 `$...$`（需要 KaTeX/MathJax），表格结构与化学记号各归各的；
 - 图表位置留 `>[图示: ...]` 占位。
@@ -501,7 +502,7 @@ python selfcheck_glm_offline.py test1.pdf
 ### 7.2 交付物体检（对真实产物）
 
 ```bash
-python verify_handout.py test1_handout_glm.md --html preview.html
+python verify_handout.py test1.md --html preview.html
 ```
 
 `selfcheck` 测的是**程序**，`verify_handout` 测的是**产物**：
@@ -521,7 +522,7 @@ python verify_handout.py test1_handout_glm.md --html preview.html
 ```bash
 python pdf_to_chemistry_handout_glm.py --check            # Key / 网络 / 看图
 python pdf_to_chemistry_handout_glm.py "[2]碳酸钠+碳酸氢钠.pdf"
-python verify_handout.py "[2]碳酸钠+碳酸氢钠_handout_glm.md" --html preview.html
+python verify_handout.py "[2]碳酸钠+碳酸氢钠.md" --html preview.html
 
 # 批量链路（同一套转换逻辑，多一层批量外壳）
 python batch_convert.py 课件目录 -r -o 讲义 --skip-existing --verify --report r.json
@@ -540,7 +541,7 @@ python batch_convert.py 课件目录 -r -o 讲义 --skip-existing --verify --rep
 
 批量链路实测（`test1.pdf` + `[2]碳酸钠+碳酸氢钠.pdf`，各只转第 1 页）：
 
-- 两份都按 `<名>_handout_glm.md` 落盘，`.part` → `.md` 改名完成，报告 `counts={"ok":2}`；
+- 两份都按 `<名>.md` 落盘，`.part` → `.md` 改名完成，报告 `counts={"ok":2}`；
 - 高峰期两份都先撞了 4 次 1305 再降级到 `glm-4v-flash`，整批无需人工干预；
 - 逐份体检 11/11、21/21 全通过，`--report` 的 JSON 与屏幕汇总一致。
 
@@ -560,6 +561,9 @@ python batch_convert.py 课件目录 -r -o 讲义 --skip-existing --verify --rep
 - **渲染前提**：化学记号与表格内公式都要求渲染环境挂 KaTeX/MathJax（见第 2 节）。
   纯 HTML 导出、不挂公式渲染器的场景下，表格里的公式会显示成 `$...$` 源码。
 - **速度**：串行逐页，免费模型 + 思维链，单页约十几秒到二十几秒。
+- **输出名就是 `<输入名>.md`**：不再带 `_handout_glm` 后缀，所以它会与源 PDF 同名
+  （只是扩展名不同）。同目录下若已有同名 `.md`，批量跑会被当成待写目标覆盖掉 ——
+  不想覆盖就换 `-o` 输出目录，或给单文件入口显式指定输出路径。
 
 ---
 
@@ -576,7 +580,7 @@ Handout-Maker2/
 ├── README.md
 ├── test1.pdf                                 # 示例课件（15 页）
 ├── [2]碳酸钠+碳酸氢钠.pdf                     # 示例课件（13 页，含多张对照表）
-├── [2]碳酸钠+碳酸氢钠_handout_glm.md          # 示例产物（真实 API 跑出来的）
+├── [2]碳酸钠+碳酸氢钠.md                      # 示例产物（真实 API 跑出来的）
 ├── preview_碳酸钠.html                        # 上面那份产物的 HTML 渲染预览
 └── legacy_non_glm_backup.zip                 # 历史版本备份（本地 Qwen / Gemini 两个脚本等）
 ```
@@ -631,5 +635,5 @@ python handout_normalize.py 输入.md [输出.md]
 | 网关 | `https://open.bigmodel.cn/api/paas/v4/` | `GLM_BASE_URL` |
 | API Key | 内置兜底值 | `GLM_API_KEY` / `ZHIPUAI_API_KEY` / `BIGMODEL_API_KEY` / `ZHIPUAI_API_KEY` |
 
-标题后缀 `_DEFAULT_TITLE_SUFFIX = " 课程讲义"`：输出文件的一级标题是
-`<PDF 文件名>` + 这个后缀。
+标题后缀 `_DEFAULT_TITLE_SUFFIX = ""`：输出文件的一级标题就是 PDF 文件名本身，
+默认不加任何后缀（交付物里不会再出现「课程讲义」这类字眼）。

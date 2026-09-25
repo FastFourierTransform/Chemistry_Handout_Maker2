@@ -463,6 +463,9 @@ conv = G.convert_pdf_to_handout(PDF, OUT, api_key="k", models=["m1"], dpi=100,
 body = open(conv, encoding="utf-8").read()
 check("输出文件已生成", os.path.exists(conv))
 check("标题行正确", body.startswith("# "), body.splitlines()[0])
+check("一级标题就是 PDF 文件名（不带「课程讲义」等后缀）",
+      body.splitlines()[0] == "# " + os.path.splitext(os.path.basename(PDF))[0],
+      body.splitlines()[0])
 check("交付物里没有「第 N 页」分页标题", "## 第 " not in body and "页内容" not in body)
 check("页序标记/HTML 注释未写进正文", "page:" not in body and "<!--" not in body)
 check("每页正文都落盘（按指纹计数）", body.count("图指纹") == len(pages),
@@ -641,15 +644,17 @@ check("输出名冲突被消歧，4 个目标互不相同",
 check("冲突的那个改用父目录名区分",
       any(os.path.basename(j.dest).startswith("b_") for j in _jobs),
       str([os.path.basename(j.dest) for j in _jobs]))
-check("输出名沿用单文件契约 <名>_handout_glm.md",
-      all(os.path.basename(j.dest).endswith("_handout_glm.md") for j in _jobs))
+check("输出名沿用单文件契约 <名>.md（不再加 _handout_glm 后缀）",
+      all(os.path.basename(j.dest).endswith(".md")
+          and "_handout_glm" not in os.path.basename(j.dest) for j in _jobs),
+      str([os.path.basename(j.dest) for j in _jobs]))
 
 print("\n== 13c. 成品判定（半成品不许冒充成品）==")
 _only_title = os.path.join(_BATCH, "只有标题.md")
 with open(_only_title, "w", encoding="utf-8") as _f:
     _f.write("# 只有标题\n\n")
 check("只有一级标题的文件不算成品", not B._looks_complete(_only_title))
-check("有正文的文件算成品", B._looks_complete("test1_handout_glm.md"))
+check("有正文的文件算成品", B._looks_complete(OUT))
 check("文件不存在不算成品", not B._looks_complete(os.path.join(_BATCH, "没有.md")))
 
 print("\n== 13d. 端到端批量：.part 改名 / 失败隔离 / 报表 ==")
@@ -663,14 +668,16 @@ with contextlib.redirect_stdout(_buf):
                   "--quiet", "--dpi", "80"])
 _out_files = sorted(os.listdir(_BATCH_OUT))
 check("坏 PDF 只让退出码=1，整批照跑完",
-      _rc == 1 and _out_files.count("课件2_handout_glm.md") == 1, f"rc={_rc} 产物={_out_files}")
+      _rc == 1 and _out_files.count("课件2.md") == 1, f"rc={_rc} 产物={_out_files}")
 check("3 个正常 PDF 全部产出", len(_out_files) == 3, str(_out_files))
 check("成功后不留 .part 残留（.part -> .md 改名完成）",
       not [f for f in _out_files if f.endswith(".part")], str(_out_files))
-check("坏 PDF 没有产出半成品", "课件10_handout_glm.md" not in _out_files)
-_body = open(os.path.join(_BATCH_OUT, "课件2_handout_glm.md"), encoding="utf-8").read()
+check("坏 PDF 没有产出半成品", "课件10.md" not in _out_files)
+_body = open(os.path.join(_BATCH_OUT, "课件2.md"), encoding="utf-8").read()
 check("批量产物与单文件同构（标题 + 正文 + HTML 表格）",
       _body.startswith("# ") and "图指纹" in _body and "<table>" in _body)
+check("批量产物的一级标题也不带「课程讲义」后缀",
+      _body.splitlines()[0] == "# 课件2", _body.splitlines()[0])
 check("批量产物同样没有分页标题/页序标记",
       "## 第 " not in _body and "page:" not in _body and "<!--" not in _body)
 check("批量产物同样归一化（Unicode 下标 -> LaTeX）",
@@ -708,15 +715,17 @@ check("--verify-only 逐份给出体检结论",
 check("没有产物的输入按「跳过」处理，不算不合格",
       "没有产物" in _v_out and "[不合格] 课件10" not in _v_out, _v_diag)
 check("--verify-only 退出码反映体检结果（0=全过 / 1=有不合格）", _rc3 in (0, 1), f"rc={_rc3}")
-if os.path.exists("[2]碳酸钠+碳酸氢钠_handout_glm.md"):
+_real = next((p for p in ("[2]碳酸钠+碳酸氢钠.md",
+                          "[2]碳酸钠+碳酸氢钠_handout_glm.md") if os.path.exists(p)), None)
+if _real:
     _prev = os.path.join(_BATCH, "preview.html")
-    _n_ok, _n_bad, _ = B.verify_md("[2]碳酸钠+碳酸氢钠_handout_glm.md", _prev)
+    _n_ok, _n_bad, _ = B.verify_md(_real, _prev)
     check("verify_md 对真实产物全部通过（静默，不刷屏）", not _n_bad and _n_ok >= 60,
           f"{_n_ok} 项通过 / 不合格={_n_bad}")
     check("--html-preview 预览页写出且自带 KaTeX",
           os.path.exists(_prev) and "katex" in open(_prev, encoding="utf-8").read().lower())
 else:
-    print("  （跳过：仓库里没有真实产物 [2]碳酸钠+碳酸氢钠_handout_glm.md）")
+    print("  （跳过：仓库里没有真实产物 [2]碳酸钠+碳酸氢钠.md）")
 
 print("\n== 13g. --dry-run 不碰 API、不写文件 ==")
 _before_files = set(os.listdir(_BATCH_OUT))

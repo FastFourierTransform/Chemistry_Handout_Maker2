@@ -105,8 +105,9 @@ REQUEST_TIMEOUT = float(os.environ.get("HM_REQUEST_TIMEOUT", "300"))
 # 输出 token 上限。4.6v-flash 会先思考（实测 930 reasoning tokens / 页），4096 才有余量。
 MAX_TOKENS = int(os.environ.get("HM_MAX_TOKENS", "4096"))
 
-# 输出文档的标题后缀：`<PDF 文件名>` + 这个后缀作为一级标题。
-_DEFAULT_TITLE_SUFFIX = " 课程讲义"
+# 输出文档的一级标题就是 PDF 文件名本身；留这个后缀开关只为必要时手动加尾巴
+# （默认空串：交付物标题里不再出现「课程讲义」这类字眼）。
+_DEFAULT_TITLE_SUFFIX = ""
 
 
 # ---------------------------------------------------------------------------
@@ -910,7 +911,7 @@ def build_arg_parser():
     )
     p.add_argument("input_pdf", nargs="?", default="test1.pdf", help="输入 PDF（默认 test1.pdf）")
     p.add_argument("output_md", nargs="?", default=None,
-                   help="输出 Markdown（默认 <输入名>_handout_glm.md）")
+                   help="输出 Markdown（默认 <输入名>.md）")
     p.add_argument("--model", default=None,
                    help="模型名，可用逗号写降级链（默认 %s）" % ",".join(DEFAULT_MODELS))
     p.add_argument("--api-key", default=None,
@@ -962,7 +963,7 @@ def main(argv=None):
         return check_api(api_key=args.api_key, base_url=args.base_url, models=models,
                          image_path=args.check_image, stream=not args.no_stream)
 
-    output_md = args.output_md or (os.path.splitext(args.input_pdf)[0] + "_handout_glm.md")
+    output_md = args.output_md or (os.path.splitext(args.input_pdf)[0] + ".md")
     selected = _parse_page_spec(args.pages)
     api_key = resolve_api_key(args.api_key)
     # 解析一次就写回 args：--pages 分支的 convert_selected_pages 直接读 args.base_url，

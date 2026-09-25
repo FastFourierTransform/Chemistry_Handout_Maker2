@@ -17,8 +17,8 @@
 注意：记号全是 LaTeX，所以交付物的渲染环境必须挂 KaTeX/MathJax（预览页自带 CDN）。
 
 用法：
-    python verify_handout.py test1_handout_glm.md
-    python verify_handout.py test1_handout_glm.md --html preview.html   # 顺便出预览页
+    python verify_handout.py test1.md
+    python verify_handout.py test1.md --html preview.html   # 顺便出预览页
 """
 
 import argparse

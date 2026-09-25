@@ -43,7 +43,7 @@
    存在**的字面前缀剥掉再展开（见 `_glob_safe`）—— 路径是不是通配符，文件系统说了算。
 7. **默认跳过 `*_handout_glm.pdf`**（本工具自己的产物）。产物 PDF 常常和源课件放在
    同一个目录 —— 本仓库就是 —— 扫描时把它们再转一遍只会得到
-   `xxx_handout_glm_handout_glm.md`。要连产物一起转用 `--include-outputs`，
+   `xxx_handout_glm.md` 这种冗余产物。要连产物一起转用 `--include-outputs`，
    要手工排除用 `--exclude PATTERN`。
 
 退出码：0 全部成功（含跳过） / 1 有失败 / 2 用法或输入有问题。
@@ -66,7 +66,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pdf_to_chemistry_handout_glm as G  # noqa: E402
 
-# 输出名与单文件入口保持一致：<输入名>_handout_glm.md（README 第 5 节的契约）
+# 输出名与单文件入口保持一致：<输入名>.md（README 第 5 节的契约）
+MD_SUFFIX = ".md"
+# 历史产物名里的尾巴（`xxx_handout_glm.pdf`）。输出不再加它，但批量扫描时仍把
+# 这类 PDF 当"自家产物"跳过 —— 它们常常和源课件放在同一个目录。
 OUT_SUFFIX = "_handout_glm"
 PART_SUFFIX = ".part"
 
@@ -160,7 +163,7 @@ def collect_inputs(inputs, recursive=False, list_file=None, quiet=False,
     两类**自动排除**（只对目录/glob 这种"批量发现"生效，你亲手点名的文件永远照转）：
 
     1. `*_handout_glm.pdf` —— 本工具自己的产物。本仓库就是源课件与产物 PDF 同目录放着，
-       扫描时把它们再转一遍只会得到 `xxx_handout_glm_handout_glm.md` 这种垃圾。
+       扫描时把它们再转一遍只会得到 `xxx_handout_glm.md` 这种冗余产物。
        要连它们一起转就加 `--include-outputs`。
     2. `--exclude PATTERN`（可重复，glob，对文件名和相对路径都匹配）。
     """
@@ -290,7 +293,7 @@ def plan_jobs(pdfs, outdir=None, quiet=False):
     for src in pdfs:
         stem = os.path.splitext(os.path.basename(src))[0]
         dest_dir = outdir or os.path.dirname(os.path.abspath(src)) or "."
-        name = stem + OUT_SUFFIX + ".md"
+        name = stem + MD_SUFFIX
         dest = os.path.join(dest_dir, name)
         renamed_from = None
 
@@ -298,13 +301,13 @@ def plan_jobs(pdfs, outdir=None, quiet=False):
         if key in taken:
             # 同名不同目录：加父目录名。这一步是确定性的，重复跑结果一样。
             parent = os.path.basename(os.path.dirname(os.path.abspath(src))) or "root"
-            name = f"{parent}_{stem}{OUT_SUFFIX}.md"
+            name = f"{parent}_{stem}{MD_SUFFIX}"
             dest = os.path.join(dest_dir, name)
-            renamed_from = stem + OUT_SUFFIX + ".md"
+            renamed_from = stem + MD_SUFFIX
             key = os.path.normcase(os.path.abspath(dest))
             n = 2
             while key in taken:
-                name = f"{parent}_{stem}_{n}{OUT_SUFFIX}.md"
+                name = f"{parent}_{stem}_{n}{MD_SUFFIX}"
                 dest = os.path.join(dest_dir, name)
                 key = os.path.normcase(os.path.abspath(dest))
                 n += 1
