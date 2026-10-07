@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """本地离线自检：不联网，用假传输层跑通「渲染 -> 分批 -> 调用 -> 重试/降级 -> 归一化 -> 落盘」全链路。
 
-在 Handout-Maker2 环境里运行（有 pymupdf + PIL + handout_normalize）：
+在 Handout-Maker2 环境里运行（有 pymupdf + PIL + normalize）：
 
-    python selfcheck_glm_offline.py [输入.pdf]
+    python selfcheck.py [输入.pdf]
 """
 import contextlib
 import glob as _glob
@@ -19,8 +19,8 @@ import types as pytypes
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import pdf_to_chemistry_handout_glm as G  # noqa: E402
-import batch_convert as B  # noqa: E402
+import handout_maker as G  # noqa: E402
+import batch as B  # noqa: E402
 
 PDF = sys.argv[1] if len(sys.argv) > 1 else "test1.pdf"
 OUT = "_tmp_glm_offline_out.md"
@@ -566,7 +566,7 @@ check("--no-stream", a.no_stream is True)
 check("--check 与 --check-image 存在", hasattr(ap.parse_args(["--check"]), "check_image"))
 check("默认 thinking=auto", ap.parse_args([]).thinking == "auto")
 
-print("\n== 13. 批量入口 batch_convert（假传输层，不联网、不算额度）==")
+print("\n== 13. 批量入口 batch（假传输层，不联网、不算额度）==")
 _BATCH = "_tmp_batch_selfcheck"
 _BATCH_OUT = os.path.join(_BATCH, "out")
 shutil.rmtree(_BATCH, ignore_errors=True)
@@ -699,7 +699,7 @@ check("已完成的文件确实没有再发请求（跳过=不花钱）",
       len(EchoTransport.calls) == _calls_done, f"新增调用={len(EchoTransport.calls) - _calls_done}")
 check("跳过路径也没把 .part 当成品", not [f for f in os.listdir(_BATCH_OUT) if f.endswith(".part")])
 
-print("\n== 13f. --verify-only 与体检函数（复用 verify_handout，不起子进程）==")
+print("\n== 13f. --verify-only 与体检函数（复用 verify，不起子进程）==")
 _calls_done2 = len(EchoTransport.calls)
 _buf3 = io.StringIO()
 with contextlib.redirect_stdout(_buf3):

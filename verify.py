@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """交付物体检：拿一份生成好的讲义 Markdown，逐条核对"能不能正确显示"。
 
-这不是自检脚本的替代品 —— `selfcheck_glm_offline.py` 测的是**程序**（假传输层，
+这不是自检脚本的替代品 —— `selfcheck.py` 测的是**程序**（假传输层，
 不联网），本脚本测的是**产物**（真实跑出来的 .md 文件）。
 
 核对三件事：
@@ -17,12 +17,11 @@
 注意：记号全是 LaTeX，所以交付物的渲染环境必须挂 KaTeX/MathJax（预览页自带 CDN）。
 
 用法：
-    python verify_handout.py test1.md
-    python verify_handout.py test1.md --html preview.html   # 顺便出预览页
+    python verify.py test1.md
+    python verify.py test1.md --html preview.html   # 顺便出预览页
 """
 
 import argparse
-import os
 import re
 import sys
 
@@ -265,7 +264,7 @@ def _build_preview(html):
 # ---------------------------------------------------------------------------
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        prog="verify_handout.py",
+        prog="verify.py",
         description="对生成好的讲义 Markdown 做交付前体检（表格渲染 / 化学式方言 / 符号）",
     )
     ap.add_argument("markdown", help="待体检的讲义 .md")

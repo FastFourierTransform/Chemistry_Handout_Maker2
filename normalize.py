@@ -42,7 +42,7 @@ r"""输出后处理：把模型生成的化学讲义 Markdown 归一化成单一
 
 本模块可独立运行（便于对已有输出文件做离线清洗）：
 
-    python handout_normalize.py 输入.md [输出.md]      # 缺省输出时原地覆盖
+    python normalize.py 输入.md [输出.md]      # 缺省输出时原地覆盖
 """
 
 import re
@@ -529,29 +529,26 @@ def _parse_chem_token(token):
 _LATEX_PLAIN = {"↑": r"\uparrow", "↓": r"\downarrow", "·": r"\cdot", "⇌": r"\rightleftharpoons"}
 
 
-def _render_script(value, kind, dialect):
+def _render_script(value, kind):
     if not value:
         return ""
-    if dialect == "html":
-        return f"<{kind}>{value}</{kind}>"
     if kind == "sub":
         return "_" + (value if len(value) == 1 else "{" + value + "}")
     return "^" + (value if len(value) == 1 else "{" + value + "}")
 
 
-def _render_chem(parts, dialect):
+def _render_chem(parts):
+    """部件序列 → 行内 LaTeX 片段（表格内外共用这一条渲染路径）。"""
     out = []
     for kind, value in parts:
         if kind == "elem":
-            out.append(value if dialect == "html" else "\\text{" + value + "}")
+            out.append("\\text{" + value + "}")
         elif kind in ("sub", "sup"):
-            out.append(_render_script(value, kind, dialect))
+            out.append(_render_script(value, kind))
         elif kind == "sep":
-            out.append(" + " if dialect == "html" else "+")
-        elif dialect == "latex":
-            out.append(_LATEX_PLAIN.get(value, value))
+            out.append("+")
         else:
-            out.append(value)
+            out.append(_LATEX_PLAIN.get(value, value))
     return "".join(out)
 
 
@@ -563,16 +560,7 @@ def _formula_to_latex(s):
     Cu(OH)_2↓ → \\text{Cu}(\\text{O}\\text{H})_2\\downarrow
     2Na+2H2O  → 2\\text{Na} + 2\\text{H}_2\\text{O}
     """
-    return _render_chem(_parse_chem_token(s), "latex")
-
-
-def _formula_to_html(s):
-    """化学记号串 → 原生 HTML 化学标记。
-
-    历史遗留：表格单元格曾经用 HTML 方言（<sub>/<sup>），现在表格内外统一走
-    LaTeX，这个函数只剩"渲染成 HTML 标记"的能力，供离线工具或自定义渲染使用。
-    """
-    return _render_chem(_parse_chem_token(s), "html")
+    return _render_chem(_parse_chem_token(s))
 
 
 # --- 4b. 化学式识别 ---------------------------------------------------------

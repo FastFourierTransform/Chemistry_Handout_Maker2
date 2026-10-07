@@ -5,7 +5,7 @@
 不需要本地权重、不需要代理（国内直连）。
 
     PDF ──PyMuPDF 渲染──> 每页 JPEG ──GLM 视觉模型──> Markdown 正文
-        ──handout_normalize 归一化──> 一份连续的化学讲义 Markdown
+        ──normalize 归一化──> 一份连续的化学讲义 Markdown
 
 输入输出契约（后处理与提示词共同保证）：
     * 表格结构：一律原生 HTML（<table>/<tr>/<th>/<td>），不用 Markdown 管道表；
@@ -27,10 +27,10 @@
     把 base_url 设成同一个地址即可，wire 格式完全一致。
 
 用法：
-    python pdf_to_chemistry_handout_glm.py                       # 转 test1.pdf
-    python pdf_to_chemistry_handout_glm.py 输入.pdf 输出.md
-    python pdf_to_chemistry_handout_glm.py --check               # 只测 Key/网络/看图能力
-    python pdf_to_chemistry_handout_glm.py 输入.pdf --pages 1-3  # 只转前 3 页（试参数用）
+    python handout_maker.py                       # 转 test1.pdf
+    python handout_maker.py 输入.pdf 输出.md
+    python handout_maker.py --check               # 只测 Key/网络/看图能力
+    python handout_maker.py 输入.pdf --pages 1-3  # 只转前 3 页（试参数用）
 
 API Key 读取顺序：命令行 --api-key > 环境变量 GLM_API_KEY / ZHIPUAI_API_KEY / BIGMODEL_API_KEY
 > 脚本内兜底值（取自 verify_GLM-Flash_API.ipynb）。
@@ -63,7 +63,7 @@ import urllib.error
 import urllib.request
 import zlib
 
-from handout_normalize import normalize_handout_markdown
+from normalize import normalize_handout_markdown
 
 # ---------------------------------------------------------------------------
 # 1. 常量与默认配置
@@ -105,10 +105,6 @@ REQUEST_TIMEOUT = float(os.environ.get("HM_REQUEST_TIMEOUT", "300"))
 # 输出 token 上限。4.6v-flash 会先思考（实测 930 reasoning tokens / 页），4096 才有余量。
 MAX_TOKENS = int(os.environ.get("HM_MAX_TOKENS", "4096"))
 
-# 输出文档的一级标题就是 PDF 文件名本身；留这个后缀开关只为必要时手动加尾巴
-# （默认空串：交付物标题里不再出现「课程讲义」这类字眼）。
-_DEFAULT_TITLE_SUFFIX = ""
-
 
 # ---------------------------------------------------------------------------
 # 2. 提示词
@@ -119,7 +115,7 @@ _DEFAULT_TITLE_SUFFIX = ""
 #   ② 化学记号表格内外都用行内 LaTeX —— 一套写法管到底，不出现"同一种物质两种长相"；
 #      注意这要求交付物的渲染环境挂 KaTeX（本工程的预览页与体检预览都自带 CDN）；
 #   ③ 等号就是等号：方程式一律 `=`，可逆用 `\rightleftharpoons`，`→` 只留给转化关系。
-# 后处理（handout_normalize）会把这套约定再兜一遍，提示词与后处理是"双保险"关系。
+# 后处理（normalize）会把这套约定再兜一遍，提示词与后处理是"双保险"关系。
 # ---------------------------------------------------------------------------
 PROMPT = r"""你是一个专业的化学讲义整理助手。请把这张化学课件图片的内容转写成结构化的 Markdown 讲义正文。
 
@@ -655,10 +651,10 @@ def _assemble_blocks(text, batch, normalize):
     逐页归一化能保证表格/方程式的处理边界与图片边界对齐。
 
     ⚠️ 顺序很关键，这里踩过一次真实的坑：
-    `handout_normalize` 会把 `->` / `→` 还原成等号，而页序标记 `<!-- page: 2 -->`
+    `normalize` 会把 `->` / `→` 还原成等号，而页序标记 `<!-- page: 2 -->`
     里的 `-->` 正好命中这条规则，于是**先归一化再切页**会把标记破坏成
     `<!-- page: 2 =`，切页直接失效。所以必须**先切页、再逐块归一化**
-    （另外 handout_normalize 现在会先删 HTML 注释，双保险）。
+    （另外 normalize 现在会先删 HTML 注释，双保险）。
     """
     if len(batch) == 1:
         bodies = [text]
@@ -707,7 +703,7 @@ def convert_pdf_to_handout(
     # 增量写入：每批解析完立即落盘 + flush，中途崩溃也留得下可用的部分讲义。
     try:
         with open(output_md_path, "w", encoding="utf-8") as f:
-            title = os.path.splitext(os.path.basename(pdf_path))[0] + _DEFAULT_TITLE_SUFFIX
+            title = os.path.splitext(os.path.basename(pdf_path))[0]
             f.write(f"# {title}\n\n")
             f.flush()
 
@@ -749,7 +745,7 @@ def convert_selected_pages(images, output_md, api_key, models, args):
     batch_size = max(1, int(args.pages_per_request))
     normalize = not args.no_normalize
     with open(output_md, "w", encoding="utf-8") as f:
-        title = os.path.splitext(os.path.basename(args.input_pdf))[0] + _DEFAULT_TITLE_SUFFIX
+        title = os.path.splitext(os.path.basename(args.input_pdf))[0]
         f.write(f"# {title}\n\n")
         f.flush()
         for start in range(0, len(images), batch_size):
@@ -906,7 +902,7 @@ def check_api(api_key=None, base_url=None, models=None, image_path=None, stream=
 # ---------------------------------------------------------------------------
 def build_arg_parser():
     p = argparse.ArgumentParser(
-        prog="pdf_to_chemistry_handout_glm.py",
+        prog="handout_maker.py",
         description="PDF -> 化学教案 Markdown（智谱 GLM 视觉模型 API 版）",
     )
     p.add_argument("input_pdf", nargs="?", default="test1.pdf", help="输入 PDF（默认 test1.pdf）")
@@ -930,7 +926,7 @@ def build_arg_parser():
     p.add_argument("--no-stream", action="store_true",
                    help="关闭流式输出（默认流式：更快看到首字，也便于发现半途异常）")
     p.add_argument("--pages", default=None, help="只处理指定页，如 1-3,7（页码从 1 开始）")
-    p.add_argument("--no-normalize", action="store_true", help="跳过 handout_normalize 后处理")
+    p.add_argument("--no-normalize", action="store_true", help="跳过 normalize 后处理")
     p.add_argument("--check", action="store_true", help="只做 API 连通性自检，不转换 PDF")
     p.add_argument("--check-image", default=None,
                    help="自检时改用这张真实图片（png/jpg）替代内置测试图")

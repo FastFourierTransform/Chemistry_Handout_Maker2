@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 """批量转换入口：一条命令把一整个目录 / 一批 PDF 依次转成讲义 Markdown。
 
-单文件入口是 `pdf_to_chemistry_handout_glm.py`（渲染 -> 调 GLM -> 归一化 -> 落盘），
+单文件入口是 `handout_maker.py`（渲染 -> 调 GLM -> 归一化 -> 落盘），
 本脚本只是它的**批量外壳**：转换逻辑一行都没有重写，直接调用
 `convert_pdf_to_handout()` / `convert_selected_pages()`，所以单文件跑与批量跑的
 产物完全一致（同一套提示词、同一套后处理、同一套落盘节奏）。
 
 用法：
 
-    python batch_convert.py 课件目录                  # 目录下所有 PDF
-    python batch_convert.py 课件目录 -r               # 递归子目录
-    python batch_convert.py a.pdf b.pdf c.pdf         # 指定若干文件
-    python batch_convert.py "image/*.pdf"             # glob（PowerShell 下记得加引号）
-    python batch_convert.py --list-file list.txt      # 从清单文件读路径（一行一个）
-    python batch_convert.py 课件目录 --dry-run        # 只看会转哪些、输出到哪
-    python batch_convert.py 课件目录 -o out --skip-existing --verify --report r.json
-    python batch_convert.py 课件目录 --verify-only    # 只体检已有产物，不花额度
+    python batch.py 课件目录                  # 目录下所有 PDF
+    python batch.py 课件目录 -r               # 递归子目录
+    python batch.py a.pdf b.pdf c.pdf         # 指定若干文件
+    python batch.py "课件/*.pdf"             # glob（PowerShell 下记得加引号）
+    python batch.py --list-file list.txt      # 从清单文件读路径（一行一个）
+    python batch.py 课件目录 --dry-run        # 只看会转哪些、输出到哪
+    python batch.py 课件目录 -o out --skip-existing --verify --report r.json
+    python batch.py 课件目录 --verify-only    # 只体检已有产物，不花额度
 
 刻意为之的七个设计（都是"批量"与"单文件"的真正差别）：
 
@@ -28,7 +28,7 @@
    但绝不被当作成品。
 3. **一个文件失败不拖垮整批**（默认；要"出错即停"用 `--stop-on-error`）。文件级的
    异常全部捕获，末尾给失败清单 + 一条可直接复制粘贴的重跑命令。
-4. **体检内置**。`--verify` 直接复用 `verify_handout.py` 的检查函数（import 进同一
+4. **体检内置**。`--verify` 直接复用 `verify.py` 的检查函数（import 进同一
    进程，不是起子进程），逐份核对表格结构 / 化学记号 / 符号；`--html-preview DIR`
    顺便产出带 KaTeX 的预览页。
 5. **输出名冲突自动消歧**。同名 PDF 散在不同子目录、又都输出到同一个 `-o` 时，
@@ -64,7 +64,7 @@ import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import pdf_to_chemistry_handout_glm as G  # noqa: E402
+import handout_maker as G  # noqa: E402
 
 # 输出名与单文件入口保持一致：<输入名>.md（README 第 5 节的契约）
 MD_SUFFIX = ".md"
@@ -128,7 +128,7 @@ def _glob_safe(pattern, recursive=False):
 
     从前往后逐段判断：`isdir` 为真就当字面量收进前缀，第一个不存在的组件起停手，
     剩下的整段原样交给 glob（保留 `*` / `?` / `[]` / `**` 的通配符语义）。
-    所以 `image/*.pdf` 这种正常通配符写法一个字节都不会变。
+    所以 `课件/*.pdf` 这种正常通配符写法一个字节都不会变。
     """
     drive, rest = os.path.splitdrive(pattern)
     prefix = drive + os.sep if drive else ""
@@ -156,7 +156,7 @@ def collect_inputs(inputs, recursive=False, list_file=None, quiet=False,
                    exclude=None, skip_outputs=True):
     """把命令行里的各种"输入写法"展开成 [路径, ...]。
 
-    支持四种：目录（取 *.pdf，-r 则递归）、glob（`image/*.pdf`）、单个文件、
+    支持四种：目录（取 *.pdf，-r 则递归）、glob（`课件/*.pdf`）、单个文件、
     清单文件（--list-file，一行一个路径，`#` 开头是注释）。重复输入按真实路径去重，
     保持首次出现的顺序 —— 同一个 PDF 在批量里被转两遍纯粹是浪费额度。
 
@@ -335,7 +335,7 @@ def _looks_complete(md_path):
 # 3. 转换：单文件两种模式（整份 / 抽页），与主脚本 main() 走同一条链路
 # ---------------------------------------------------------------------------
 def convert_one(src, dest, args, api_key, models, base_url):
-    """把 src 转成 dest。抽页模式与 `pdf_to_chemistry_handout_glm.py --pages` 等价。"""
+    """把 src 转成 dest。抽页模式与 `handout_maker.py --pages` 等价。"""
     selected = G._parse_page_spec(args.pages)
 
     if selected is None:
@@ -363,16 +363,16 @@ def convert_one(src, dest, args, api_key, models, base_url):
 
 
 # ---------------------------------------------------------------------------
-# 4. 交付物体检：复用 verify_handout 的检查函数（同进程 import，不起子进程）
+# 4. 交付物体检：复用 verify 的检查函数（同进程 import，不起子进程）
 # ---------------------------------------------------------------------------
 def verify_md(md_path, html_path=None):
-    """跑一遍 verify_handout 的全部检查，返回 (通过项数, 失败项名列表, 明细日志)。
+    """跑一遍 verify 的全部检查，返回 (通过项数, 失败项名列表, 明细日志)。
 
-    verify_handout 是个把结果往模块级 RESULTS 里堆的脚本，所以这里要
+    verify 是个把结果往模块级 RESULTS 里堆的脚本，所以这里要
     ① 先清空 RESULTS ② 把它的打印收进内存 —— 批量时只报"44/44 通过"和失败项名，
-    逐项细节收进报表，需要看细节就单跑一次 verify_handout.py。
+    逐项细节收进报表，需要看细节就单跑一次 verify.py。
     """
-    import verify_handout as V
+    import verify as V
 
     with open(md_path, "r", encoding="utf-8") as f:
         text = f.read()
@@ -435,7 +435,7 @@ def _print_summary(jobs, results, elapsed, args, out=None):
 
     if failed:
         print("\n以下是失败项，修好后可直接重跑（--skip-existing 会跳过已成功的）：", file=out)
-        cmd = ["python", "batch_convert.py"]
+        cmd = ["python", "batch.py"]
         cmd += ['"%s"' % r["source"] for r in failed]
         if args.outdir:
             cmd += ["-o", '"%s"' % args.outdir]
@@ -456,7 +456,7 @@ def _print_summary(jobs, results, elapsed, args, out=None):
             passed, bad = r["verify"]
             print(f"  {os.path.basename(r['output'])}：{len(bad)}/{passed + len(bad)} 项不合格"
                   f" -> {'；'.join(bad)}", file=out)
-        print("  逐项细节：python verify_handout.py \"<产物.md>\"", file=out)
+        print("  逐项细节：python verify.py \"<产物.md>\"", file=out)
 
     if pending:
         print(f"\n（未处理 {len(pending)} 个：本轮被中断或 --stop-on-error 停下，重跑即可继续）", file=out)
@@ -468,12 +468,12 @@ def _print_summary(jobs, results, elapsed, args, out=None):
 
 def build_arg_parser():
     p = argparse.ArgumentParser(
-        prog="batch_convert.py",
+        prog="batch.py",
         description="批量转换入口：一批 PDF / 一整个目录 -> 结构化 Markdown 讲义（串行，复用单文件链路）",
-        epilog="示例：python batch_convert.py 课件目录 -o out --skip-existing --verify",
+        epilog="示例：python batch.py 课件目录 -o out --skip-existing --verify",
     )
     p.add_argument("inputs", nargs="*",
-                   help="PDF 文件 / 目录 / glob（如 \"image/*.pdf\"）；可给多个")
+                   help="PDF 文件 / 目录 / glob（如 \"课件/*.pdf\"）；可给多个")
     p.add_argument("-o", "--outdir", default=None,
                    help="输出目录（默认与各自 PDF 同目录）；不存在会自动创建")
     p.add_argument("-r", "--recursive", action="store_true", help="目录输入时递归子目录")
@@ -490,7 +490,7 @@ def build_arg_parser():
     p.add_argument("--precheck", action="store_true",
                    help="开跑前先做一次 API 连通性自检（大batch前建议开；失败就整批不启动）")
     p.add_argument("--verify", action="store_true",
-                   help="每份产物跑一遍 verify_handout 的检查（表格结构/化学记号/符号）")
+                   help="每份产物跑一遍 verify 的检查（表格结构/化学记号/符号）")
     p.add_argument("--verify-only", action="store_true",
                    help="不转换，只体检已有产物（不花额度）")
     p.add_argument("--html-preview", default=None, metavar="DIR",
@@ -514,7 +514,7 @@ def build_arg_parser():
     p.add_argument("--no-stream", action="store_true", help="关闭流式输出")
     p.add_argument("--pages", default=None,
                    help="只处理每个文件的指定页，如 1-3,7（对所有输入生效，试参数用）")
-    p.add_argument("--no-normalize", action="store_true", help="跳过 handout_normalize 后处理")
+    p.add_argument("--no-normalize", action="store_true", help="跳过 normalize 后处理")
     p.add_argument("--quiet", action="store_true",
                    help="不逐页回显主脚本的输出（只在失败时把该文件的日志打出来）")
     return p
@@ -551,7 +551,7 @@ def main(argv=None):
     args = build_arg_parser().parse_args(argv)
 
     if not args.inputs and not args.list_file:
-        print("没有指定输入。用法示例：python batch_convert.py 课件目录\n"
+        print("没有指定输入。用法示例：python batch.py 课件目录\n"
               "（故意不给默认值：默认扫当前目录会让一次误触就烧掉一批额度）")
         return 2
 

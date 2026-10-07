@@ -1,0 +1,7 @@
+# Python 字节码缓存
+__pycache__/
+*.py[cod]
+
+# 运行时 / 自检产生的临时文件（_tmp_pip.log、selfcheck 的 _tmp_* 等）
+_tmp_*
+*.part
