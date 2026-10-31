@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """批量转换入口：一条命令把一整个目录 / 一批 PDF 依次转成讲义 Markdown。
 
-单文件入口是 `handout_maker.py`（渲染 -> 调 GLM -> 归一化 -> 落盘），
-本脚本只是它的**批量外壳**：转换逻辑一行都没有重写，直接调用
+单文件入口有两个：`handout_maker.py`（调 GLM）与 `handout_maker2.py`（调 Gemini）。
+本脚本只是它们的**批量外壳**：转换逻辑一行都没有重写，直接调用
 `convert_pdf_to_handout()` / `convert_selected_pages()`，所以单文件跑与批量跑的
 产物完全一致（同一套提示词、同一套后处理、同一套落盘节奏）。
+用 `--engine glm|gemini` 选择批量走哪个后端（默认 glm；gemini 需另给代理）。
 
 用法：
 
-    python batch.py 课件目录                  # 目录下所有 PDF
+    python batch.py 课件目录                  # 目录下所有 PDF（默认 GLM）
+    python batch.py 课件目录 --engine gemini  # 改用 Gemini 后端
     python batch.py 课件目录 -r               # 递归子目录
     python batch.py a.pdf b.pdf c.pdf         # 指定若干文件
     python batch.py "课件/*.pdf"             # glob（PowerShell 下记得加引号）
@@ -64,7 +66,12 @@ import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import handout_maker as G  # noqa: E402
+import handout_maker as _GLM  # noqa: E402
+import handout_maker2 as _GEMINI  # noqa: E402
+
+# 可切换的后端：glm = handout_maker.py（智谱 GLM），gemini = handout_maker2.py（Google Gemini）。
+# 两条脚本共享同一份 normalize.py 与同一份 PROMPT，产物格式规范完全一致。
+ENGINES = {"glm": _GLM, "gemini": _GEMINI}
 
 # 输出名与单文件入口保持一致：<输入名>.md（README 第 5 节的契约）
 MD_SUFFIX = ".md"
@@ -334,18 +341,26 @@ def _looks_complete(md_path):
 # ---------------------------------------------------------------------------
 # 3. 转换：单文件两种模式（整份 / 抽页），与主脚本 main() 走同一条链路
 # ---------------------------------------------------------------------------
-def convert_one(src, dest, args, api_key, models, base_url):
-    """把 src 转成 dest。抽页模式与 `handout_maker.py --pages` 等价。"""
+def convert_one(src, dest, args, api_key, models, base_url, G, proxy=None):
+    """把 src 转成 dest。抽页模式与单文件入口的 --pages 等价。
+
+    G 是选定的后端模块（ENGINES[args.engine]）；proxy 只对 gemini 后端生效，
+    原样透传给主脚本（由主脚本内部解析，None 表示用其默认值）。
+    """
     selected = G._parse_page_spec(args.pages)
+    use_proxy = args.engine == "gemini"
 
     if selected is None:
-        return G.convert_pdf_to_handout(
-            src, dest, api_key=api_key, base_url=base_url, models=models,
+        kw = dict(
+            api_key=api_key, base_url=base_url, models=models,
             dpi=args.dpi, pages_per_request=args.pages_per_request,
             normalize=not args.no_normalize, temperature=args.temperature,
             max_tokens=args.max_tokens, stream=not args.no_stream,
             thinking=args.thinking, verbose=not args.quiet,
         )
+        if use_proxy:
+            kw["proxy"] = proxy
+        return G.convert_pdf_to_handout(src, dest, **kw)
 
     # 抽页模式：只渲染指定页再走同一条链路（与主脚本 main() 的分支一字不差）
     images, workdir = G.render_pdf_pages(src, dpi=args.dpi)
@@ -357,6 +372,8 @@ def convert_one(src, dest, args, api_key, models, base_url):
             base_url=base_url, max_tokens=args.max_tokens,
             no_stream=args.no_stream, thinking=args.thinking,
         )
+        if use_proxy:
+            ns.proxy = proxy
         return G.convert_selected_pages(keep, dest, api_key, models, ns)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -439,6 +456,10 @@ def _print_summary(jobs, results, elapsed, args, out=None):
         cmd += ['"%s"' % r["source"] for r in failed]
         if args.outdir:
             cmd += ["-o", '"%s"' % args.outdir]
+        if args.engine != "glm":
+            cmd += ["--engine", args.engine]
+        if args.proxy:
+            cmd += ["--proxy", args.proxy]
         if args.model:
             cmd += ["--model", args.model]
         if args.pages:
@@ -498,19 +519,26 @@ def build_arg_parser():
     p.add_argument("--report", default=None, metavar="FILE",
                    help="把本次批量结果写成 JSON 报表（含每份的用时/页数/体检/错误）")
 
-    # 以下与单文件入口同名同义，原样透传
+    # ---- 后端选择（批量独有）----------------------------------------------
+    p.add_argument("--engine", choices=("glm", "gemini"), default="glm",
+                   help="调用哪个后端：glm=handout_maker(智谱 GLM，默认)；gemini=handout_maker2(Google Gemini)")
+    p.add_argument("--proxy", default=None,
+                   help="Gemini 后端的 HTTP/HTTPS 代理（默认读 GEMINI_PROXY / 内置 127.0.0.1:7897；传 off/none 直连；glm 后端忽略此参数）")
+
+    # 以下与单文件入口同名同义，原样透传（默认值随 --engine 而定）
     p.add_argument("--model", default=None,
-                   help="模型名，可用逗号写降级链（默认 %s）" % ",".join(G.DEFAULT_MODELS))
-    p.add_argument("--api-key", default=None, help="API Key（默认读 GLM_API_KEY / ZHIPUAI_API_KEY）")
-    p.add_argument("--base-url", default=None, help=f"网关地址（默认 {G.DEFAULT_BASE_URL}）")
-    p.add_argument("--dpi", type=int, default=G.RENDER_DPI, help=f"渲染 DPI（默认 {G.RENDER_DPI}）")
-    p.add_argument("--pages-per-request", type=int, default=G.PAGES_PER_REQUEST,
-                   help=f"每次请求塞几页（默认 {G.PAGES_PER_REQUEST}）")
+                   help="模型名，可用逗号写降级链（默认由 --engine 决定）")
+    p.add_argument("--api-key", default=None,
+                   help="API Key（glm 读 GLM_API_KEY/ZHIPUAI_API_KEY；gemini 读 GEMINI_API_KEY/GOOGLE_API_KEY）")
+    p.add_argument("--base-url", default=None, help="网关地址（默认由 --engine 决定）")
+    p.add_argument("--dpi", type=int, default=_GLM.RENDER_DPI, help=f"渲染 DPI（默认 {_GLM.RENDER_DPI}）")
+    p.add_argument("--pages-per-request", type=int, default=_GLM.PAGES_PER_REQUEST,
+                   help=f"每次请求塞几页（默认 {_GLM.PAGES_PER_REQUEST}）")
     p.add_argument("--temperature", type=float, default=0.0, help="采样温度（默认 0）")
-    p.add_argument("--max-tokens", type=int, default=G.MAX_TOKENS,
-                   help=f"输出 token 上限（默认 {G.MAX_TOKENS}；glm-4v-flash 自动夹到 1024）")
+    p.add_argument("--max-tokens", type=int, default=_GLM.MAX_TOKENS,
+                   help=f"输出 token 上限（默认 {_GLM.MAX_TOKENS}）")
     p.add_argument("--thinking", choices=("auto", "enabled", "disabled"), default="auto",
-                   help="思维链开关（默认 auto）")
+                   help="思维链开关（默认 auto；仅 glm 后端生效，gemini 忽略）")
     p.add_argument("--no-stream", action="store_true", help="关闭流式输出")
     p.add_argument("--pages", default=None,
                    help="只处理每个文件的指定页，如 1-3,7（对所有输入生效，试参数用）")
@@ -549,6 +577,7 @@ def _verify_jobs(jobs, args):
 
 def main(argv=None):
     args = build_arg_parser().parse_args(argv)
+    G = ENGINES[args.engine]  # 选定的后端模块（glm=handout_maker / gemini=handout_maker2）
 
     if not args.inputs and not args.list_file:
         print("没有指定输入。用法示例：python batch.py 课件目录\n"
@@ -557,7 +586,8 @@ def main(argv=None):
 
     # ---- 展开输入 --------------------------------------------------------
     print("=" * 72)
-    print("批量转换" + ("（--dry-run 预演）" if args.dry_run else ""))
+    print("批量转换" + ("（--dry-run 预演）" if args.dry_run else "")
+          + f"｜后端 {args.engine}" + ("｜gemini 代理 " + args.proxy if args.engine == "gemini" and args.proxy else ""))
     print("=" * 72)
     try:
         pdfs = collect_inputs(args.inputs, recursive=args.recursive,
@@ -593,12 +623,16 @@ def main(argv=None):
     api_key = G.resolve_api_key(args.api_key)
     base_url = G.resolve_base_url(args.base_url)
     models = G.parse_models(args.model)
+    proxy = args.proxy  # 只有 gemini 后端会用到；原样透传，由主脚本内部解析默认值
 
     if args.precheck:
         print("\n--precheck：先做一次 API 连通性自检 ...")
-        if G.check_api(api_key=api_key, base_url=base_url, models=models,
-                       stream=not args.no_stream) != 0:
-            print("[错误] 连通性自检没通过，整批不启动（确认 Key/网络后再跑，或去掉 --precheck）。")
+        kw = dict(api_key=api_key, base_url=base_url, models=models,
+                  stream=not args.no_stream)
+        if args.engine == "gemini":
+            kw["proxy"] = proxy
+        if G.check_api(**kw) != 0:
+            print("[错误] 连通性自检没通过，整批不启动（确认 Key/网络/代理后再跑，或去掉 --precheck）。")
             return 2
 
     # ---- 只体检：不转换、不花额度 ---------------------------------------
@@ -643,9 +677,9 @@ def main(argv=None):
                 # 先写 .part：整份跑完才改名，半成品永远不会冒充成品
                 if args.quiet:
                     with contextlib.redirect_stdout(log):
-                        convert_one(job.source, job.part, args, api_key, models, base_url)
+                        convert_one(job.source, job.part, args, api_key, models, base_url, G, proxy)
                 else:
-                    convert_one(job.source, job.part, args, api_key, models, base_url)
+                    convert_one(job.source, job.part, args, api_key, models, base_url, G, proxy)
                 os.replace(job.part, job.dest)
             except KeyboardInterrupt:
                 print("\n[中断] 收到 Ctrl+C，正在收尾 ...")
@@ -726,6 +760,7 @@ def _emit_report(args, jobs, results, elapsed, total_pages=0):
         },
         "total_pages": total_pages,
         "options": {
+            "engine": args.engine, "proxy": args.proxy,
             "outdir": args.outdir, "model": args.model, "dpi": args.dpi,
             "pages_per_request": args.pages_per_request, "pages": args.pages,
             "max_tokens": args.max_tokens, "thinking": args.thinking,

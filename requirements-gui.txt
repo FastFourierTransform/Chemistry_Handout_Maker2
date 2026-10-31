@@ -1,0 +1,7 @@
+# GUI 桌面客户端新增依赖（核心脚本本身的依赖见根 README）
+# 用法：pip install -r requirements-gui.txt
+PySide6>=6.6          # Qt6 界面框架（GUI 唯一的新增硬依赖）
+pymupdf>=1.24         # PDF 渲染（核心脚本也需要，装它可让 GUI 开箱即用）
+Pillow                # 图像处理（核心脚本也需要）
+markdown-it-py        # 可选：verify 的渲染校验缺了会自动跳过
+pywin32; sys_platform == "win32"   # 可选：让 PowerPoint COM 能导出 .pptx/.ppt 为 PDF

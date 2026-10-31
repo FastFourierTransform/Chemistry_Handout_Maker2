@@ -5,6 +5,10 @@
 不做 OCR + 版面分析的传统流水线，而是**把每页 PDF 渲染成图片，直接交给视觉大模型「看图写讲义」**，
 再用一层确定性后处理把化学式、方程式、表格的格式钉死。不需要 GPU、不需要本地权重、不需要代理。
 
+> **🖥️ 桌面客户端**：`python main_gui.py` 启动现代化 GUI —— 拖拽导入 PDF/PPT、动态管理
+> 模型 API 配置（JSON 持久化）、一键批量转换、实时日志与进度、暂停/终止、逐份体检。
+> 架构与用法见 [GUI_README.md](GUI_README.md)。命令行入口（本 README）原样可用，两者共享同一条转换链路。
+
 ```
 PDF ──PyMuPDF 渲染──▶ 每页 JPEG ──智谱 GLM 视觉模型──▶ Markdown 正文
                     ──normalize 归一化──▶ 一份连续的化学讲义 Markdown
@@ -431,6 +435,12 @@ Handout-Maker2/
 ├── normalize.py                # 确定性后处理（可独立 CLI 清洗已有 md）
 ├── verify.py                   # 交付物体检（渲染校验 + HTML 预览）
 ├── selfcheck.py                # 离线自检（不联网）
+├── main_gui.py                 # 🖥️ GUI 启动器（python main_gui.py）
+├── gui/                        # GUI 客户端（PySide6：面板/桥接/工作线程/PPT转换器）
+├── tests/                      # gui_smoke.py（离线冒烟）/ gui_live.py（真机联调）
+├── GUI_README.md               # GUI 架构与使用说明
+├── requirements-gui.txt        # GUI 新增依赖
+├── config/app_config.json      # GUI 配置（首次启动自动生成，已 gitignore）
 ├── test1.pdf                   # 示例课件（15 页）
 ├── verify_GLM-Flash_API.ipynb  # 最初的 API 验证 notebook（网关/Key 来源）
 ├── legacy_non_glm_backup.zip   # 历史版本备份（本地 Qwen / Gemini 两个脚本等）

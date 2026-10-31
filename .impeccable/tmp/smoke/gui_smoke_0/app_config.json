@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "name": "GLM 智谱（默认）",
+      "engine": "glm",
+      "base_url": "",
+      "api_key": "",
+      "models": "glm-4.6v-flash,glm-4v-flash",
+      "params": {}
+    },
+    {
+      "name": "Gemini（需代理）",
+      "engine": "gemini",
+      "base_url": "",
+      "api_key": "",
+      "models": "gemini-3.8-flash,gemini-2.5-flash",
+      "params": {
+        "proxy": "http://127.0.0.1:7897"
+      }
+    },
+    {
+      "name": "DeepSeek / OpenAI 兼容（需填 Key）",
+      "engine": "openai",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "",
+      "models": "deepseek-chat",
+      "params": {}
+    }
+  ],
+  "selected_profile": 0,
+  "options": {
+    "outdir": "",
+    "skip_existing": false,
+    "verify": false,
+    "html_preview": false,
+    "stop_on_error": false,
+    "precheck": false,
+    "pages": "",
+    "report": ""
+  },
+  "ui": {
+    "geometry": "AdnQywADAAAAAAAAAAAAAAAABDsAAAKDAAAAAgAAAAIAAAQ5AAACgQAAAAAAAAAAAyAAAAACAAAAAgAABDkAAAKB",
+    "splitter_main": [
+      616,
+      440
+    ],
+    "splitter_body": [
+      308,
+      109
+    ],
+    "log_visible": true,
+    "auto_scroll": true
+  }
+}
